@@ -1,176 +1,86 @@
-# AI Chatbot Project
+# NovaChat — AI Chatbot
 
-A full-stack AI chatbot application using React frontend, Node.js backend (with Claude AI), and an optional C# .NET API.
+A full-stack AI chatbot with a modern dark UI, powered by Ollama (local LLM).
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- **Node.js** (v14+) - [Download here](https://nodejs.org/)
-- **npm** (comes with Node.js)
-- **ANTHROPIC_API_KEY** - Get one from [Anthropic Console](https://console.anthropic.com)
+- [Node.js](https://nodejs.org/) v18+
+- [Ollama](https://ollama.com/download) installed and running
 
-### Installation
-
-1. **Clone the repository**
+### 1. Clone the repo
 ```bash
 git clone https://github.com/JASWANTH-JAS-PNG/Ai-Chatbot.git
 cd Ai-Chatbot
 ```
 
-2. **Install root dependencies**
+### 2. Install dependencies
 ```bash
+# Root (backend)
 npm install
-```
 
-3. **Install frontend dependencies**
-```bash
-cd ai-app
+# Frontend
+cd frontend
 npm install
 cd ..
 ```
 
-4. **Set up environment variables**
-
-Create a `.env` file in the root directory:
+### 3. Start Ollama
+```bash
+ollama pull llama3.2
+ollama serve
 ```
-ANTHROPIC_API_KEY=your_api_key_here
-```
 
-### Running the Project
-
-#### Option 1: Run Both Frontend & Backend Together (Recommended)
+### 4. Run the app
 ```bash
 npm run dev
 ```
-This will start:
-- 📱 **React Frontend**: http://localhost:3000
+
+This starts:
+- 🤖 **NovaChat Frontend**: http://localhost:4173
 - 🔧 **Node.js API**: http://localhost:5000
 
-#### Option 2: Run Separately
-```bash
-# Terminal 1 - Backend API
-npm run server
-
-# Terminal 2 - Frontend
-npm run client
-```
-
-### Available Scripts
-
-| Command | Purpose |
-|---------|---------|
-| `npm run dev` | Runs frontend and backend concurrently |
-| `npm run server` | Runs Node.js server on port 5000 |
-| `npm run client` | Runs React app on port 3000 |
+---
 
 ## 📁 Project Structure
 
 ```
 Ai-Chatbot/
-├── server.js              # Express.js server (Claude API wrapper)
-├── package.json           # Root dependencies
-├── ai-app/                # React frontend
-│   ├── src/              # React components
-│   ├── public/           # Static files
-│   ├── package.json      # Frontend dependencies
-│   └── ...
-├── backend/              # C# .NET API (optional)
-│   ├── Controllers/      # API endpoints
-│   ├── Models/          # Data models
-│   ├── Services/        # Business logic
-│   └── ...
-└── .env                  # Environment variables
+├── server.js          # Express backend (Ollama API wrapper)
+├── package.json       # Root scripts
+├── frontend/          # React + Vite + TypeScript frontend
+│   ├── src/
+│   │   ├── components/   # Sidebar, Header, ChatArea, Message...
+│   │   ├── store/        # Zustand state management
+│   │   ├── types/        # TypeScript types
+│   │   └── utils/        # API helpers
+│   └── vite.config.ts
+└── backend/           # C# .NET API (optional)
 ```
 
-## 🔧 Technology Stack
+## 🔧 Tech Stack
 
-- **Frontend**: React 19
-- **Backend API**: Express.js (Node.js)
-- **AI Model**: Claude (Anthropic)
-- **Alternative Backend**: C# .NET with Entity Framework
-- **Database**: SQL Server (for C# backend)
+| Layer | Tech |
+|-------|------|
+| Frontend | React 19 + Vite + TypeScript |
+| Styling | Tailwind CSS v4 + CSS variables |
+| State | Zustand + localStorage |
+| Markdown | react-markdown + rehype-highlight |
+| Backend | Express.js (Node.js) |
+| AI | Ollama (llama3.2 default) |
 
-## 📝 How It Works
+## ⚙️ Configuration
 
-1. **User Interface** (React) runs on `localhost:3000`
-2. User sends a message to the chatbot
-3. Frontend sends request to **Node.js API** on `localhost:5000`
-4. API calls **Claude AI** using Anthropic SDK
-5. Response is sent back to the frontend and displayed
-
-## 🌐 Deployment Options
-
-### 1. Deploy to Render (Recommended - Free)
-- Frontend: Render (Static Site)
-- Backend: Render (Web Service)
-- [Deployment Guide](https://render.com/docs)
-
-### 2. Deploy to Vercel + Railway
-- Frontend: Vercel
-- Backend: Railway
-- [Railway Guide](https://railway.app/docs)
-
-### 3. Deploy to Heroku (Legacy but free tier ended)
-- Use Render or Railway instead
-
-### 4. Deploy to Azure
-- [Azure App Service Guide](https://docs.microsoft.com/en-us/azure/app-service/)
+To use a different model, add to `.env`:
+```
+OLLAMA_MODEL=mistral
+OLLAMA_URL=http://localhost:11434
+```
 
 ## 🐛 Troubleshooting
 
-### Port Already in Use
-```bash
-# Kill process on port 3000 (React)
-lsof -ti:3000 | xargs kill -9
+**"Unknown error" in chat** → Ollama is not running. Run `ollama serve`.
 
-# Kill process on port 5000 (Server)
-lsof -ti:5000 | xargs kill -9
-```
+**Port 4173 in use** → Another app is using that port. Kill it or change port in `frontend/vite.config.ts`.
 
-### CORS Errors
-Ensure `.env` file has `ANTHROPIC_API_KEY` set correctly.
-
-### Dependencies Issues
-```bash
-rm -rf node_modules ai-app/node_modules
-npm install
-cd ai-app && npm install && cd ..
-```
-
-## 📚 API Endpoints
-
-### Chat Endpoint
-```
-POST http://localhost:5000/api/chat
-Content-Type: application/json
-
-{
-  "messages": [
-    {
-      "role": "user",
-      "content": "Hello!"
-    }
-  ]
-}
-```
-
-## 🔐 Security Notes
-
-- Never commit `.env` file to Git
-- Keep `ANTHROPIC_API_KEY` secret
-- Use environment variables for sensitive data
-
-## 📞 Support
-
-For issues, check:
-- [Anthropic Documentation](https://docs.anthropic.com)
-- [React Documentation](https://react.dev)
-- [Express Documentation](https://expressjs.com)
-
-## 📄 License
-
-Private Project
-
----
-
-**Happy Coding! 🎉**
+**Port 5000 in use** → Kill the old backend: `npx kill-port 5000`
