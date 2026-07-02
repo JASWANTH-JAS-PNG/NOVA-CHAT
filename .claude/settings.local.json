@@ -20,7 +20,15 @@
       "Bash(git config *)",
       "Bash(git commit *)",
       "Bash(git branch *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'c:\\\\Users\\\\pedda\\\\Desktop\\\\Ai-Chatbot'; node server.js\" -WindowStyle Normal)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'c:\\\\Users\\\\pedda\\\\Desktop\\\\Ai-Chatbot\\\\backend'; dotnet run\" -WindowStyle Normal)",
+      "Bash(rm -f .git/index.lock)",
+      "Bash(git pull *)",
+      "Bash(find /c/Users/pedda -name \"ai-app\" -type d 2>/dev/null)",
+      "Read(//c/Users/pedda/**)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'c:\\\\Users\\\\pedda\\\\Desktop\\\\ai\\\\ai-app'; npm start\" -WindowStyle Normal)",
+      "PowerShell(Get-PSDrive C | Select-Object @{N='Free_GB';E={[math]::Round\\($_.Free/1GB,2\\)}}, @{N='Used_GB';E={[math]::Round\\($_.Used/1GB,2\\)}})"
     ]
   }
 }

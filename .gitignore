@@ -33,3 +33,5 @@ Thumbs.db
 dist/
 build/
 ai-app/
+frontend/node_modules/
+frontend/dist/
