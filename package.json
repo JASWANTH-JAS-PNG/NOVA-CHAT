@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "server": "node server.js",
-    "client": "cd ai-app && npm start",
+    "client": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run server\" \"npm run client\""
   },
   "dependencies": {
