@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { WifiOff } from 'lucide-react'
 import { useChatStore } from './store/chatStore'
+import { useOnlineStatus } from './hooks/useOnlineStatus'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import ChatArea from './components/ChatArea'
@@ -7,10 +9,7 @@ import ChatArea from './components/ChatArea'
 export default function App() {
   const { theme, selectConversation, sidebarCollapsed } = useChatStore()
   const [mobileOpen, setMobileOpen] = useState(false)
-
-  useEffect(() => {
-    document.documentElement.className = theme
-  }, [theme])
+  const isOnline = useOnlineStatus()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -25,7 +24,13 @@ export default function App() {
   }, [selectConversation])
 
   return (
-    <div className="app-root">
+    <div className={`app-root ${theme}`}>
+      {!isOnline && (
+        <div className="offline-banner" role="status">
+          <WifiOff size={14} aria-hidden="true" />
+          You're offline — messages can't be sent until your connection is restored.
+        </div>
+      )}
       {mobileOpen && (
         <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />
       )}

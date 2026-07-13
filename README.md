@@ -1,12 +1,12 @@
 # NovaChat — AI Chatbot
 
-A full-stack AI chatbot with a modern dark UI, powered by Ollama (local LLM).
+A full-stack AI chatbot with a modern dark UI, powered by [OpenRouter](https://openrouter.ai/).
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) v18+
-- [Ollama](https://ollama.com/download) installed and running
+- An [OpenRouter](https://openrouter.ai/keys) API key
 
 ### 1. Clone the repo
 ```bash
@@ -25,10 +25,11 @@ npm install
 cd ..
 ```
 
-### 3. Start Ollama
-```bash
-ollama pull llama3.2
-ollama serve
+### 3. Configure your API key
+Create a `.env` file in the project root:
+```
+OPENROUTER_API_KEY=your-key-here
+OPENROUTER_MODEL=openai/gpt-4o-mini
 ```
 
 ### 4. Run the app
@@ -46,7 +47,7 @@ This starts:
 
 ```
 Ai-Chatbot/
-├── server.js          # Express backend (Ollama API wrapper)
+├── server.js          # Express backend (OpenRouter API wrapper)
 ├── package.json       # Root scripts
 ├── frontend/          # React + Vite + TypeScript frontend
 │   ├── src/
@@ -67,19 +68,21 @@ Ai-Chatbot/
 | State | Zustand + localStorage |
 | Markdown | react-markdown + rehype-highlight |
 | Backend | Express.js (Node.js) |
-| AI | Ollama (llama3.2 default) |
+| AI | OpenRouter (openai/gpt-4o-mini default) |
 
 ## ⚙️ Configuration
 
 To use a different model, add to `.env`:
 ```
-OLLAMA_MODEL=mistral
-OLLAMA_URL=http://localhost:11434
+OPENROUTER_API_KEY=your-key-here
+OPENROUTER_MODEL=anthropic/claude-3.5-haiku
 ```
+
+Browse available models at [openrouter.ai/models](https://openrouter.ai/models).
 
 ## 🐛 Troubleshooting
 
-**"Unknown error" in chat** → Ollama is not running. Run `ollama serve`.
+**"Unknown error" in chat** → Check that `OPENROUTER_API_KEY` is set correctly in `.env`.
 
 **Port 4173 in use** → Another app is using that port. Kill it or change port in `frontend/vite.config.ts`.
 

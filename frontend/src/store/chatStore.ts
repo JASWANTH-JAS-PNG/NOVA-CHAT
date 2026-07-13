@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Conversation, Message } from '../types';
+import type { Conversation, Message, Theme } from '../types';
 import { generateTitle } from '../utils/helpers';
 
 interface ChatState {
@@ -9,12 +9,13 @@ interface ChatState {
   sidebarCollapsed: boolean;
   selectedModel: string;
   searchQuery: string;
-  theme: 'dark' | 'light';
+  theme: Theme;
 
   createConversation: () => string;
   selectConversation: (id: string | null) => void;
   addMessage: (convId: string, message: Message) => void;
   updateMessageContent: (convId: string, msgId: string, content: string) => void;
+  appendMessageContent: (convId: string, msgId: string, delta: string) => void;
   finalizeMessage: (convId: string, msgId: string) => void;
   setMessageError: (convId: string, msgId: string, text?: string) => void;
   setMessageFeedback: (convId: string, msgId: string, feedback: 'up' | 'down') => void;
@@ -26,7 +27,7 @@ interface ChatState {
   toggleSidebar: () => void;
   setSelectedModel: (model: string) => void;
   setSearchQuery: (q: string) => void;
-  toggleTheme: () => void;
+  setTheme: (theme: Theme) => void;
   getCurrentConversation: () => Conversation | undefined;
 }
 
@@ -38,7 +39,7 @@ export const useChatStore = create<ChatState>()(
       sidebarCollapsed: false,
       selectedModel: 'claude-sonnet-4-6',
       searchQuery: '',
-      theme: 'dark',
+      theme: 'dark' as Theme,
 
       createConversation: () => {
         const id = crypto.randomUUID();
@@ -81,6 +82,20 @@ export const useChatStore = create<ChatState>()(
           ),
         })),
 
+      appendMessageContent: (convId, msgId, delta) =>
+        set(s => ({
+          conversations: s.conversations.map(c =>
+            c.id === convId
+              ? {
+                  ...c,
+                  messages: c.messages.map(m =>
+                    m.id === msgId ? { ...m, content: m.content + delta, isStreaming: true } : m
+                  ),
+                }
+              : c
+          ),
+        })),
+
       finalizeMessage: (convId, msgId) =>
         set(s => ({
           conversations: s.conversations.map(c =>
@@ -103,7 +118,7 @@ export const useChatStore = create<ChatState>()(
                   ...c,
                   messages: c.messages.map(m =>
                     m.id === msgId
-                      ? { ...m, isStreaming: false, hasError: true, content: text }
+                      ? { ...m, isStreaming: false, hasError: true, errorMessage: text }
                       : m
                   ),
                 }
@@ -164,7 +179,7 @@ export const useChatStore = create<ChatState>()(
 
       setSearchQuery: (q) => set({ searchQuery: q }),
 
-      toggleTheme: () => set(s => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
+      setTheme: (theme) => set({ theme }),
 
       getCurrentConversation: () => {
         const { conversations, currentConversationId } = get();

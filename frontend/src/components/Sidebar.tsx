@@ -50,7 +50,7 @@ export default function Sidebar({ onMobileClose }: Props) {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', gap:'8px', height:'100%' }}>
         <button className="icon-btn" onClick={toggleSidebar} title="Expand sidebar">
-          <ChevronRight size={17} />
+          <ChevronRight size={17} className="icon-morph" />
         </button>
         <button className="icon-btn" onClick={handleNewChat} title="New chat">
           <Plus size={17} />
@@ -66,14 +66,15 @@ export default function Sidebar({ onMobileClose }: Props) {
         <div style={{ display:'flex', alignItems:'center', gap:'9px' }}>
           <div style={{
             width:30, height:30, borderRadius:9,
-            background:'linear-gradient(135deg,var(--accent),#a78bfa)',
+            background:'var(--accent-gradient)',
+            boxShadow:'var(--glow-accent)',
             display:'flex', alignItems:'center', justifyContent:'center',
             fontWeight:700, fontSize:14, color:'#fff',
           }}>N</div>
-          <span style={{ fontWeight:600, fontSize:15, color:'var(--text-primary)' }}>NovaChat</span>
+          <span style={{ fontWeight:600, fontSize:15, color:'var(--text-primary)', letterSpacing:'-0.01em' }}>NovaChat</span>
         </div>
         <button className="icon-btn" onClick={toggleSidebar} title="Collapse sidebar">
-          <ChevronLeft size={16} />
+          <ChevronLeft size={16} className="icon-morph" />
         </button>
       </div>
 
@@ -119,7 +120,7 @@ export default function Sidebar({ onMobileClose }: Props) {
               color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.07em',
               marginBottom:'2px',
             }}>{group}</div>
-            {convs.map(conv =>
+            {convs.map((conv, index) =>
               renamingId === conv.id ? (
                 <RenameInput
                   key={conv.id}
@@ -138,6 +139,7 @@ export default function Sidebar({ onMobileClose }: Props) {
               ) : (
                 <ConvItem
                   key={conv.id}
+                  index={index}
                   conv={conv}
                   isActive={conv.id === currentConversationId}
                   onSelect={() => { selectConversation(conv.id); onMobileClose() }}
@@ -160,8 +162,9 @@ export default function Sidebar({ onMobileClose }: Props) {
   )
 }
 
-function ConvItem({ conv, isActive, onSelect, onRename, onPin, onDelete }: {
+function ConvItem({ conv, index, isActive, onSelect, onRename, onPin, onDelete }: {
   conv: Conversation
+  index: number
   isActive: boolean
   onSelect: () => void
   onRename: () => void
@@ -169,7 +172,11 @@ function ConvItem({ conv, isActive, onSelect, onRename, onPin, onDelete }: {
   onDelete: () => void
 }) {
   return (
-    <div className={`conv-item ${isActive ? 'active' : ''}`} onClick={onSelect}>
+    <div
+      className={`conv-item ${isActive ? 'active' : ''}`}
+      style={{ '--i': Math.min(index, 12) } as React.CSSProperties}
+      onClick={onSelect}
+    >
       <span style={{
         fontSize:'13.5px', color:'var(--text-primary)', flex:1,
         overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',

@@ -10,11 +10,11 @@ namespace backend.Controllers
     [Route("api/[controller]")]
     public class ChatAIController : ControllerBase
     {
-        private readonly OllamaServices _ollamaServices;
+        private readonly OpenRouterServices _openRouterServices;
 
-        public ChatAIController(OllamaServices ollamaServices)
+        public ChatAIController(OpenRouterServices openRouterServices)
         {
-            _ollamaServices = ollamaServices;
+            _openRouterServices = openRouterServices;
         }
 
         private static readonly object SystemMessage = new
@@ -32,7 +32,7 @@ namespace backend.Controllers
             var messages = new[] { SystemMessage }
                 .Concat(request.Messages.Select(m => (object)new { role = m.Role, content = m.Content }));
 
-            var reply = await _ollamaServices.GetOllamaResponse(messages);
+            var reply = await _openRouterServices.GetChatResponse(messages);
             return Ok(new { reply });
         }
     }

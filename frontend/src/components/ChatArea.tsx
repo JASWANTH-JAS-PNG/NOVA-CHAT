@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useChatStore } from '../store/chatStore'
-import { sendMessage } from '../utils/api'
-import type { Message } from '../types'
+import { sendMessageStream } from '../utils/api'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { filesToAttachments } from '../utils/attachments'
+import type { Message, Attachment } from '../types'
 import MessageComponent from './Message'
 import InputComposer from './InputComposer'
 import EmptyState from './EmptyState'
@@ -10,19 +12,24 @@ import EmptyState from './EmptyState'
 export default function ChatArea() {
   const {
     currentConversationId, createConversation, selectConversation,
-    addMessage, updateMessageContent, finalizeMessage, setMessageError,
+    addMessage, appendMessageContent, finalizeMessage, setMessageError,
     setConversationTitleFromMessage, getCurrentConversation,
   } = useChatStore()
 
   const [input, setInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [showJumpBtn, setShowJumpBtn] = useState(false)
+  const [hasNewMessage, setHasNewMessage] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState<Attachment[]>([])
+  const [isDragging, setIsDragging] = useState(false)
+  const isOnline = useOnlineStatus()
 
   const abortRef = useRef<AbortController | null>(null)
-  const streamStopRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const userScrolledRef = useRef(false)
+  const dragCounterRef = useRef(0)
+  const lastMessageCountRef = useRef(0)
 
   const conv = getCurrentConversation()
   const messages = conv?.messages ?? []
@@ -33,7 +40,12 @@ export default function ChatArea() {
   }, [])
 
   useEffect(() => {
-    if (!userScrolledRef.current) scrollToBottom(false)
+    if (!userScrolledRef.current) {
+      scrollToBottom(false)
+    } else if (messages.length > lastMessageCountRef.current) {
+      setHasNewMessage(true)
+    }
+    lastMessageCountRef.current = messages.length
   }, [messages, scrollToBottom])
 
   const handleScroll = () => {
@@ -42,6 +54,7 @@ export default function ChatArea() {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
     setShowJumpBtn(!nearBottom)
     userScrolledRef.current = !nearBottom
+    if (nearBottom) setHasNewMessage(false)
   }
 
   // Reset scroll tracking on conversation change
@@ -51,29 +64,47 @@ export default function ChatArea() {
     scrollToBottom(false)
   }, [currentConversationId, scrollToBottom])
 
-  const fakeStream = async (convId: string, msgId: string, text: string) => {
-    streamStopRef.current = false
-    const chunkSize = 5
-    let i = 0
-    while (i < text.length && !streamStopRef.current) {
-      const end = Math.min(i + chunkSize, text.length)
-      updateMessageContent(convId, msgId, text.slice(0, end))
-      i = end
-      if (!userScrolledRef.current) {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' })
-      }
-      await new Promise(r => setTimeout(r, 18))
-    }
-    if (!streamStopRef.current) {
-      updateMessageContent(convId, msgId, text)
-    }
-    finalizeMessage(convId, msgId)
+  const addFiles = async (files: File[]) => {
+    if (!files.length) return
+    const next = await filesToAttachments(files)
+    setPendingFiles(prev => [...prev, ...next])
   }
 
-  const submit = async (content: string) => {
+  const removeAttachment = (id: string) => {
+    setPendingFiles(prev => prev.filter(a => a.id !== id))
+  }
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    dragCounterRef.current++
+    setIsDragging(true)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
+    if (dragCounterRef.current === 0) setIsDragging(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setIsDragging(false)
+    const files = Array.from(e.dataTransfer.files ?? [])
+    addFiles(files)
+  }
+
+  const submit = async (content: string, attachments: Attachment[] = []) => {
     const text = content.trim()
-    if (!text || isGenerating) return
+    if ((!text && !attachments.length) || isGenerating) return
     setInput('')
+    setPendingFiles([])
 
     let convId = currentConversationId
     if (!convId) {
@@ -86,9 +117,10 @@ export default function ChatArea() {
       role: 'user',
       content: text,
       timestamp: Date.now(),
+      attachments: attachments.length ? attachments : undefined,
     }
     addMessage(convId, userMsg)
-    setConversationTitleFromMessage(convId, text)
+    setConversationTitleFromMessage(convId, text || `${attachments.length} file(s) attached`)
 
     const assistantId = crypto.randomUUID()
     addMessage(convId, {
@@ -106,11 +138,25 @@ export default function ChatArea() {
     const currentConv = useChatStore.getState().conversations.find(c => c.id === convId)
     const apiMessages = (currentConv?.messages ?? [])
       .filter(m => m.id !== assistantId && !m.isStreaming)
-      .map(m => ({ role: m.role, content: m.content }))
+      .map(m => ({
+        role: m.role,
+        content: m.attachments?.length
+          ? `${m.content}\n\n[User attached ${m.attachments.length} file(s): ${m.attachments.map(a => a.name).join(', ')}]`
+          : m.content,
+      }))
 
     try {
-      const reply = await sendMessage(apiMessages, abortRef.current.signal)
-      await fakeStream(convId!, assistantId, reply)
+      await sendMessageStream(
+        apiMessages,
+        (delta) => {
+          appendMessageContent(convId!, assistantId, delta)
+          if (!userScrolledRef.current) {
+            bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+          }
+        },
+        abortRef.current.signal
+      )
+      finalizeMessage(convId!, assistantId)
     } catch (err: unknown) {
       const error = err as Error
       if (error.name === 'AbortError') {
@@ -124,7 +170,6 @@ export default function ChatArea() {
   }
 
   const stopGeneration = () => {
-    streamStopRef.current = true
     abortRef.current?.abort()
     setIsGenerating(false)
     if (currentConversationId) {
@@ -134,7 +179,7 @@ export default function ChatArea() {
     }
   }
 
-  const regenerate = async () => {
+  const regenerate = useCallback(async () => {
     if (!currentConversationId || isGenerating) return
     const conv = useChatStore.getState().conversations.find(c => c.id === currentConversationId)
     if (!conv) return
@@ -155,11 +200,23 @@ export default function ChatArea() {
       }))
     }
 
-    await submit(lastUser.content)
-  }
+    await submit(lastUser.content, lastUser.attachments ?? [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentConversationId, isGenerating])
 
   return (
-    <div className="chat-area">
+    <div
+      className="chat-area"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="drop-zone-overlay">
+          <div className="drop-zone-message">Drop files to attach</div>
+        </div>
+      )}
       {messages.length === 0 ? (
         <EmptyState onPrompt={p => { setInput(p); setTimeout(() => submit(p), 0) }} />
       ) : (
@@ -180,17 +237,24 @@ export default function ChatArea() {
       )}
 
       {showJumpBtn && (
-        <button className="jump-to-bottom" onClick={() => { scrollToBottom(); userScrolledRef.current = false; setShowJumpBtn(false) }}>
-          <ChevronDown size={14} /> Jump to bottom
+        <button
+          className={`jump-to-bottom ${hasNewMessage ? 'has-new' : ''}`}
+          onClick={() => { scrollToBottom(); userScrolledRef.current = false; setShowJumpBtn(false); setHasNewMessage(false) }}
+        >
+          <ChevronDown size={14} /> {hasNewMessage ? 'New message' : 'Jump to bottom'}
         </button>
       )}
 
       <InputComposer
         value={input}
         onChange={setInput}
-        onSend={() => submit(input)}
+        onSend={() => submit(input, pendingFiles)}
         onStop={stopGeneration}
         isGenerating={isGenerating}
+        disabled={!isOnline}
+        attachments={pendingFiles}
+        onAddFiles={addFiles}
+        onRemoveAttachment={removeAttachment}
       />
     </div>
   )

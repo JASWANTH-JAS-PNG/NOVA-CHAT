@@ -7,7 +7,7 @@ using backend.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddHttpClient<OllamaServices>(client =>
+builder.Services.AddHttpClient<OpenRouterServices>(client =>
 {
     client.Timeout = TimeSpan.FromMinutes(10);
 });
