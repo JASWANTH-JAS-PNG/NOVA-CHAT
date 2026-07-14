@@ -110,6 +110,30 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "get_catch_up_digest",
+      description: "Summarize all recently captured notifications (texts, emails, etc.) into one digest instead of reading each one.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_app_usage",
+      description: "Get how much time the user has spent today on a specific app, or a top-apps breakdown if no app is named.",
+      parameters: {
+        type: "object",
+        properties: {
+          app_name: { type: "string", description: "App to check, e.g. Instagram. Omit for a top-apps summary." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "reply_all_unread_whatsapp",
       description: "Draft and send an AI reply to every unread WhatsApp message currently captured on the phone, with no per-message confirmation.",
       parameters: {
@@ -130,6 +154,22 @@ const PHONE_TOOLS = [
           datetime: { type: "string", description: "ISO-8601 local datetime for the reminder, e.g. 2026-07-15T17:00:00" },
         },
         required: ["title", "datetime"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "schedule_daily_briefing",
+      description: "Schedule (or cancel) a recurring daily briefing that proactively notifies the user each day with the weather and today's calendar, with no need to ask.",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+          time: { type: "string", description: "24h HH:mm, e.g. 08:00" },
+          location: { type: "string", description: "City for the weather lookup" },
+        },
+        required: ["enabled"],
       },
     },
   },
@@ -207,7 +247,7 @@ app.post("/api/chat", async (req, res) => {
     + " Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, ✨💀🔥 emoji when it fits, lowercase energy, short punchy sentences over formal ones. Still be genuinely helpful and accurate — the vibe is casual, the substance isn't."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, reply to all unread WhatsApp or Gmail messages at once, or turn always-on auto-reply mode on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, reply to all unread WhatsApp or Gmail messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, or check app usage time, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
