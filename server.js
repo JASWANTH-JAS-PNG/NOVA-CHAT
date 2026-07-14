@@ -53,7 +53,7 @@ const PHONE_TOOLS = [
     type: "function",
     function: {
       name: "play_music",
-      description: "Find a song or artist and immediately start playing it on Spotify on the user's phone.",
+      description: "Search for a song or artist in Spotify on the user's phone so they can play it.",
       parameters: {
         type: "object",
         properties: {
