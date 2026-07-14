@@ -213,6 +213,143 @@ const PHONE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "send_email",
+      description: "Send an email directly from the user's Gmail account, with no manual confirmation from the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "Recipient email address" },
+          subject: { type: "string", description: "Email subject line" },
+          body: { type: "string", description: "Email body text" },
+        },
+        required: ["to", "subject", "body"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_sms",
+      description: "Send a native SMS/text message directly to a phone number or a saved contact's name, with no manual confirmation from the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          recipient: { type: "string", description: "Phone number (with country code) or a contact's name" },
+          message: { type: "string", description: "The message text to send" },
+        },
+        required: ["recipient", "message"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_nearby_places",
+      description: "Find places near the user's current location using their phone's GPS, e.g. coffee shops, gas stations, pharmacies.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What kind of place to look for, e.g. 'coffee shop', 'gas station'" },
+          radius_km: { type: "number", description: "Search radius in kilometers. Omit for a sensible default." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "share_location",
+      description: "Share the user's current live location with a contact via message.",
+      parameters: {
+        type: "object",
+        properties: {
+          recipient: { type: "string", description: "Phone number (with country code) or a contact's name" },
+        },
+        required: ["recipient"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "navigate_to",
+      description: "Open turn-by-turn navigation to a destination in the phone's native Maps app.",
+      parameters: {
+        type: "object",
+        properties: {
+          destination: { type: "string", description: "Address, place name, or landmark to navigate to" },
+          mode: { type: "string", enum: ["driving", "walking", "transit", "bicycling"], description: "Mode of transport. Omit for driving." },
+        },
+        required: ["destination"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "configure_proactive_nudges",
+      description: "Turn Nova's autonomous proactive nudges on or off. When on, Nova may reach out on her own — unprompted — if she notices something in the user's app usage or notifications worth flagging.",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+        },
+        required: ["enabled"],
+      },
+    },
+  },
+];
+
+// Forced tool_choice for /api/proactive-check — the model either calls this with a message, or doesn't call it at all.
+const NUDGE_TOOL = {
+  type: "function",
+  function: {
+    name: "send_nudge",
+    description: "Proactively surface a message to the user right now, unprompted.",
+    parameters: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "The nudge message to show the user, in Nova's voice." },
+      },
+      required: ["message"],
+    },
+  },
+};
+
+// Always offered, regardless of client (web or phone) — lets Nova persist facts across conversations.
+const MEMORY_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "remember",
+      description: "Save a durable fact or preference about the user so it's available in future conversations, not just this one. Use for things worth recalling later (stated preferences, ongoing projects, names, constraints) — not one-off conversational details or anything already in the remembered-facts list.",
+      parameters: {
+        type: "object",
+        properties: {
+          fact: { type: "string", description: "The fact to remember, as a short standalone statement, e.g. 'Prefers Python over JavaScript' or 'Has a dog named Max'." },
+        },
+        required: ["fact"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "forget",
+      description: "Remove a previously remembered fact about the user, e.g. because it's outdated, wrong, or the user asked to forget it.",
+      parameters: {
+        type: "object",
+        properties: {
+          fact: { type: "string", description: "The remembered fact to remove — match it as closely as possible to how it's listed." },
+        },
+        required: ["fact"],
+      },
+    },
+  },
 ];
 
 function mapMessageForOpenRouter(m) {
@@ -230,7 +367,7 @@ function mapMessageForOpenRouter(m) {
 }
 
 app.post("/api/chat", async (req, res) => {
-  const { messages, enablePhoneTools } = req.body;
+  const { messages, enablePhoneTools, memories } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "messages array is required" });
@@ -243,11 +380,18 @@ app.post("/api/chat", async (req, res) => {
   const controller = new AbortController();
   res.on("close", () => controller.abort());
 
+  const memoryList = Array.isArray(memories) ? memories.filter((m) => typeof m === "string" && m.trim()) : [];
+  const memoryBlock = memoryList.length
+    ? `\n\nThings you remember about this user from past conversations:\n${memoryList.map((m) => `- ${m}`).join("\n")}\nWeave these in naturally when relevant — don't just recite the list.`
+    : "";
+
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
     + " Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, ✨💀🔥 emoji when it fits, lowercase energy, short punchy sentences over formal ones. Still be genuinely helpful and accurate — the vibe is casual, the substance isn't."
+    + memoryBlock
+    + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, reply to all unread WhatsApp or Gmail messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, or check app usage time, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp or Gmail messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, or turn your own proactive nudges on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -264,7 +408,8 @@ app.post("/api/chat", async (req, res) => {
           { role: "system", content: systemPrompt },
           ...messages.map(mapMessageForOpenRouter),
         ],
-        ...(enablePhoneTools ? { tools: PHONE_TOOLS, tool_choice: "auto" } : {}),
+        tools: [...MEMORY_TOOLS, ...(enablePhoneTools ? PHONE_TOOLS : [])],
+        tool_choice: "auto",
         stream: true,
       }),
       signal: controller.signal,
@@ -342,6 +487,65 @@ app.post("/api/chat", async (req, res) => {
     }
   } finally {
     res.end();
+  }
+});
+
+// Called periodically by the phone client (its own cadence) so Nova can decide, on her own judgment,
+// whether anything in recent telemetry is worth proactively surfacing — not a rule-based threshold.
+app.post("/api/proactive-check", async (req, res) => {
+  const { app_usage, recent_notifications, minutes_since_last_nudge } = req.body;
+
+  if (!OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
+  }
+
+  const systemPrompt = "You are Nova, checking in on the user's phone activity in the background — they have proactive nudges turned on."
+    + " Talk like a Gen Z close friend texting, not like an assistant: fr, ngl, bet, no cap, lowkey/highkey, deadass, emoji when it fits."
+    + " Use your own judgment about whether ANY of the telemetry below is actually worth interrupting the user for right now."
+    + " Most of the time nothing is — do not call the send_nudge tool unless something genuinely stands out (e.g. doomscrolling for a long stretch, a pile-up of unread messages, a notification that looks urgent)."
+    + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — weigh that yourself; don't nudge again too soon unless it's genuinely urgent.`
+    + " If nothing warrants speaking up, just don't call any tool.\n\n"
+    + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`;
+
+  let openRouterResponse;
+  try {
+    openRouterResponse = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [{ role: "system", content: systemPrompt }],
+        tools: [NUDGE_TOOL],
+        tool_choice: "auto",
+        stream: false,
+      }),
+    });
+  } catch (err) {
+    console.error("Error calling OpenRouter:", err.message);
+    return res.status(500).json({ error: "Cannot connect to OpenRouter." });
+  }
+
+  if (!openRouterResponse.ok) {
+    const errText = await openRouterResponse.text().catch(() => "");
+    console.error("OpenRouter error:", errText);
+    return res.status(500).json({ error: "OpenRouter request failed. Check your API key and model." });
+  }
+
+  const data = await openRouterResponse.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.find((tc) => tc.function?.name === "send_nudge");
+
+  if (!toolCall) {
+    return res.json({ nudge: null });
+  }
+
+  try {
+    const args = JSON.parse(toolCall.function.arguments);
+    return res.json({ nudge: args.message ?? null });
+  } catch {
+    return res.json({ nudge: null });
   }
 });
 
