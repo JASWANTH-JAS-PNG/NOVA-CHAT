@@ -9,6 +9,7 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
 // App-only token for catalog search (client credentials flow) — cached until near expiry.
 let spotifyToken = { value: null, expiresAt: 0 };
@@ -120,6 +121,46 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "create_reminder",
+      description: "Create a calendar reminder/event on the user's phone. The user still has to tap Save to confirm.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "What to be reminded about" },
+          datetime: { type: "string", description: "ISO-8601 local datetime for the reminder, e.g. 2026-07-15T17:00:00" },
+        },
+        required: ["title", "datetime"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_web",
+      description: "Search the live web for current information (news, prices, scores, anything the model might not already know).",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reply_all_unread_emails",
+      description: "Draft and send an AI reply to every unread Gmail message currently captured on the phone, with no per-message confirmation.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "send_whatsapp_message",
       description: "Send a WhatsApp message directly to a phone number or a saved contact's name, with no manual confirmation from the user.",
       parameters: {
@@ -164,7 +205,8 @@ app.post("/api/chat", async (req, res) => {
 
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
     + (enablePhoneTools
-      ? " You are running inside the user's phone app and can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, send a WhatsApp message directly, reply to all unread WhatsApp messages at once, or turn always-on auto-reply mode on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+      ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, reply to all unread WhatsApp or Gmail messages at once, or turn always-on auto-reply mode on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -259,6 +301,37 @@ app.post("/api/chat", async (req, res) => {
     }
   } finally {
     res.end();
+  }
+});
+
+app.get("/api/web-search", async (req, res) => {
+  const query = req.query.q;
+  if (!query) return res.status(400).json({ error: "q query param is required" });
+  if (!TAVILY_API_KEY) {
+    return res.status(500).json({ error: "Web search is not configured on the server." });
+  }
+
+  try {
+    const searchResponse = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: TAVILY_API_KEY,
+        query,
+        max_results: 5,
+        include_answer: true,
+      }),
+    });
+    if (!searchResponse.ok) throw new Error(`Tavily returned ${searchResponse.status}`);
+
+    const data = await searchResponse.json();
+    res.json({
+      answer: data.answer ?? "",
+      results: (data.results ?? []).map((r) => ({ title: r.title, url: r.url, content: r.content })),
+    });
+  } catch (err) {
+    console.error("Web search error:", err.message);
+    res.status(500).json({ error: "Web search failed." });
   }
 });
 
