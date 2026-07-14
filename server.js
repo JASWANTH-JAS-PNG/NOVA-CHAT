@@ -95,6 +95,20 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "set_auto_reply_mode",
+      description: "Turn always-on auto-reply on or off. When on, every new incoming message from any messaging app is answered automatically the instant it arrives, with no user action needed.",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+        },
+        required: ["enabled"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "reply_all_unread_whatsapp",
       description: "Draft and send an AI reply to every unread WhatsApp message currently captured on the phone, with no per-message confirmation.",
       parameters: {
@@ -150,7 +164,7 @@ app.post("/api/chat", async (req, res) => {
 
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
     + (enablePhoneTools
-      ? " You are running inside the user's phone app and can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, send a WhatsApp message directly, or reply to all unread WhatsApp messages at once, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+      ? " You are running inside the user's phone app and can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, send a WhatsApp message directly, reply to all unread WhatsApp messages at once, or turn always-on auto-reply mode on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
