@@ -95,6 +95,17 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "reply_all_unread_whatsapp",
+      description: "Draft and send an AI reply to every unread WhatsApp message currently captured on the phone, with no per-message confirmation.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "send_whatsapp_message",
       description: "Send a WhatsApp message directly to a phone number or a saved contact's name, with no manual confirmation from the user.",
       parameters: {
@@ -139,7 +150,7 @@ app.post("/api/chat", async (req, res) => {
 
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
     + (enablePhoneTools
-      ? " You are running inside the user's phone app and can open installed apps, play a song directly on Spotify, pause/resume/skip playback, open the Add Contact screen, or send a WhatsApp message directly, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+      ? " You are running inside the user's phone app and can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, send a WhatsApp message directly, or reply to all unread WhatsApp messages at once, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
