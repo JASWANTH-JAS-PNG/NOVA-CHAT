@@ -7,6 +7,28 @@ const PORT = 5000;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+
+// App-only token for catalog search (client credentials flow) — cached until near expiry.
+let spotifyToken = { value: null, expiresAt: 0 };
+async function getSpotifyToken() {
+  if (spotifyToken.value && Date.now() < spotifyToken.expiresAt) {
+    return spotifyToken.value;
+  }
+  const response = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString("base64")}`,
+    },
+    body: "grant_type=client_credentials",
+  });
+  if (!response.ok) throw new Error("Failed to get Spotify token");
+  const data = await response.json();
+  spotifyToken = { value: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
+  return spotifyToken.value;
+}
 
 app.use(cors({ origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:5174", "https://ai-chatbot-web.onrender.com"] }));
 app.use(express.json());
@@ -31,13 +53,27 @@ const PHONE_TOOLS = [
     type: "function",
     function: {
       name: "play_music",
-      description: "Search for a song or artist in Spotify on the user's phone so they can play it.",
+      description: "Find a song or artist and immediately start playing it on Spotify on the user's phone.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "Song name and/or artist to search for" },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "control_playback",
+      description: "Pause, resume, or skip the currently playing Spotify track on the user's phone.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["pause", "resume", "next", "previous"] },
+        },
+        required: ["action"],
       },
     },
   },
@@ -103,7 +139,7 @@ app.post("/api/chat", async (req, res) => {
 
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
     + (enablePhoneTools
-      ? " You are running inside the user's phone app and can open installed apps, search Spotify for a song, open the Add Contact screen, or send a WhatsApp message directly, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+      ? " You are running inside the user's phone app and can open installed apps, play a song directly on Spotify, pause/resume/skip playback, open the Add Contact screen, or send a WhatsApp message directly, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -198,6 +234,32 @@ app.post("/api/chat", async (req, res) => {
     }
   } finally {
     res.end();
+  }
+});
+
+app.get("/api/spotify-search", async (req, res) => {
+  const query = req.query.q;
+  if (!query) return res.status(400).json({ error: "q query param is required" });
+  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+    return res.status(500).json({ error: "Spotify credentials are not configured on the server." });
+  }
+
+  try {
+    const token = await getSpotifyToken();
+    const searchResponse = await fetch(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!searchResponse.ok) throw new Error(`Spotify search returned ${searchResponse.status}`);
+
+    const data = await searchResponse.json();
+    const track = data.tracks?.items?.[0];
+    if (!track) return res.status(404).json({ error: "No matching track found." });
+
+    res.json({ uri: track.uri, name: track.name, artist: track.artists?.[0]?.name ?? "" });
+  } catch (err) {
+    console.error("Spotify search error:", err.message);
+    res.status(500).json({ error: "Spotify search failed." });
   }
 });
 
