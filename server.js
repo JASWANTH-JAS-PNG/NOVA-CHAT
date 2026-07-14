@@ -204,6 +204,7 @@ app.post("/api/chat", async (req, res) => {
   res.on("close", () => controller.abort());
 
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
+    + " Talk casually, like texting a close friend — Gen Z slang and lowercase energy are welcome (fr, ngl, bet, no cap, lowkey, etc.), but don't force slang into every sentence or sacrifice clarity for it."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
         + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, reply to all unread WhatsApp or Gmail messages at once, or turn always-on auto-reply mode on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
