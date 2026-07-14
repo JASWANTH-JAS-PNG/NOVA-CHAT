@@ -501,10 +501,10 @@ app.post("/api/proactive-check", async (req, res) => {
 
   const systemPrompt = "You are Nova, checking in on the user's phone activity in the background — they have proactive nudges turned on."
     + " Talk like a Gen Z close friend texting, not like an assistant: fr, ngl, bet, no cap, lowkey/highkey, deadass, emoji when it fits."
-    + " Use your own judgment about whether ANY of the telemetry below is actually worth interrupting the user for right now."
-    + " Most of the time nothing is — do not call the send_nudge tool unless something genuinely stands out (e.g. doomscrolling for a long stretch, a pile-up of unread messages, a notification that looks urgent)."
-    + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — weigh that yourself; don't nudge again too soon unless it's genuinely urgent.`
-    + " If nothing warrants speaking up, just don't call any tool.\n\n"
+    + " Use your own judgment about whether ANY of the telemetry below is worth flagging right now — but lean toward speaking up rather than staying quiet when something reasonably stands out. You don't need certainty, just a plausible reason a friend would mention it."
+    + " Clear nudge-worthy signals: 60+ minutes on one app in a single stretch, several unread messages piling up, or a notification that sounds time-sensitive, urgent, or from someone close to the user (family, a boss, anything mentioning \"call me\", \"urgent\", \"asap\", an emergency, etc.)."
+    + " Only skip nudging if the telemetry is genuinely mundane (routine app use, spam/promo notifications, nothing time-sensitive)."
+    + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — avoid nudging again within the last 20 minutes unless it's clearly urgent, but don't use that as a reason to stay silent otherwise.\n\n`
     + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`;
 
   let openRouterResponse;
