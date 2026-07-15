@@ -340,6 +340,33 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "get_subscriptions",
+      description: "List recurring subscriptions (Netflix, Spotify, gym, etc.) detected from bank SMS, with their amount and estimated next renewal date.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "log_expense",
+      description: "Manually log an expense or income the user just told you about, or that you identified from a shared receipt/screenshot — adds it to the same tracker used for bank-SMS spending.",
+      parameters: {
+        type: "object",
+        properties: {
+          amount: { type: "number", description: "The amount, in rupees." },
+          merchant: { type: "string", description: "Who it was paid to/received from, if known." },
+          is_debit: { type: "boolean", description: "true if money went out (spending), false if money came in. Defaults to true." },
+        },
+        required: ["amount"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "configure_expense_digest",
       description: "Turn the daily spend digest notification on/off, or change its time. It's on by default at 8pm and needs no setup — only call this if the user wants to change or disable it.",
       parameters: {
@@ -458,7 +485,7 @@ app.post("/api/chat", async (req, res) => {
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), or check the delivery status of recent Amazon/Flipkart orders, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, or log an expense manually (e.g. from a shared receipt), using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -560,7 +587,7 @@ app.post("/api/chat", async (req, res) => {
 // Called periodically by the phone client (its own cadence) so Nova can decide, on her own judgment,
 // whether anything in recent telemetry is worth proactively surfacing — not a rule-based threshold.
 app.post("/api/proactive-check", async (req, res) => {
-  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night } = req.body;
+  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night, historical_usage } = req.body;
 
   if (!OPENROUTER_API_KEY) {
     return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
@@ -574,8 +601,12 @@ app.post("/api/proactive-check", async (req, res) => {
     + (is_late_night
       ? " It's currently late night (11pm-5am) for the user — this adds a bedtime/wellness angle: if there's meaningful screen time on a distracting app (social media, games, doomscrolling-style apps) at this hour, that alone is worth a gentle nudge to wrap up and get some sleep, even if it wouldn't be nudge-worthy during the day."
       : "")
+    + (Array.isArray(historical_usage) && historical_usage.length > 0
+      ? " You also have each app's historical average for this same day of the week — if today's usage is meaningfully above that average (roughly 1.5x or more), treat that as a nudge-worthy pattern-break even if the raw minutes alone wouldn't normally cross the 60-minute bar. Mention the comparison naturally (e.g. \"you're way past your usual Friday Instagram time\") instead of quoting raw numbers robotically."
+      : "")
     + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — avoid nudging again within the last 20 minutes unless it's clearly urgent, but don't use that as a reason to stay silent otherwise.\n\n`
-    + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`;
+    + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`
+    + (Array.isArray(historical_usage) && historical_usage.length > 0 ? `\nHistorical same-weekday averages: ${JSON.stringify(historical_usage)}` : "");
 
   let openRouterResponse;
   try {
