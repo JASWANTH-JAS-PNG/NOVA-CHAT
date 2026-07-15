@@ -13,7 +13,7 @@ const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
 // Mode-switching: same brain, different vibe. "genz" is the long-standing default tone.
 const PERSONA_PROMPTS = {
-  genz: "Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, ✨💀🔥 emoji when it fits, lowercase energy, short punchy sentences over formal ones.",
+  genz: "Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, lowercase energy, short punchy sentences over formal ones. Emoji are a rare garnish, not a habit — most messages should have zero, and never more than one. Don't perform a generic 'Gen Z' impression — if style samples of how this specific user actually texts are given below, match THEIR real phrasing, slang choices, and rhythm over any generic version of the vibe.",
   hype: "Talk like an over-the-top hype coach — everything the user does is a W, you're their biggest cheerleader, lots of energy and exclamation, genuinely fired up about their day even for small stuff.",
   tough_love: "Talk like a tough-love mentor — blunt, no sugar-coating, calls out excuses, but ultimately wants the user to actually do better, not just feel good. Short, direct sentences.",
   chaotic: "Talk like a chaotic unhinged best friend — unpredictable energy, random tangents, dramatic reactions to mundane stuff, still genuinely helpful underneath the chaos.",
@@ -718,7 +718,7 @@ function mapMessageForOpenRouter(m) {
 }
 
 app.post("/api/chat", async (req, res) => {
-  const { messages, enablePhoneTools, memories, persona } = req.body;
+  const { messages, enablePhoneTools, memories, persona, style_samples } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "messages array is required" });
@@ -736,8 +736,14 @@ app.post("/api/chat", async (req, res) => {
     ? `\n\nThings you remember about this user from past conversations:\n${memoryList.map((m) => `- ${m}`).join("\n")}\nWeave these in naturally when relevant — don't just recite the list.`
     : "";
 
+  const styleSampleList = Array.isArray(style_samples) ? style_samples.filter((s) => typeof s === "string" && s.trim()) : [];
+  const styleBlock = styleSampleList.length
+    ? `\n\nHere's how this user actually texts, in their own words:\n${styleSampleList.map((s) => `- "${s}"`).join("\n")}\nMatch THIS — their real vocabulary, capitalization habits, punctuation, typical length, and slang choices — instead of a generic impression of the persona. If they never use emoji, don't either.`
+    : "";
+
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
     + ` ${personaTone(persona)} Still be genuinely helpful and accurate — the vibe is the wrapper, the substance isn't.`
+    + styleBlock
     + " You have a set_nova_mode tool (genz, hype, tough_love, chaotic, mentor, roast, commentator) — call it whenever the user asks you to switch vibes/personality/mode."
     + memoryBlock
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
