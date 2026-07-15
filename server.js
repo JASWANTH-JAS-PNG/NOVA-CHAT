@@ -11,6 +11,21 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
+// Mode-switching: same brain, different vibe. "genz" is the long-standing default tone.
+const PERSONA_PROMPTS = {
+  genz: "Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, ✨💀🔥 emoji when it fits, lowercase energy, short punchy sentences over formal ones.",
+  hype: "Talk like an over-the-top hype coach — everything the user does is a W, you're their biggest cheerleader, lots of energy and exclamation, genuinely fired up about their day even for small stuff.",
+  tough_love: "Talk like a tough-love mentor — blunt, no sugar-coating, calls out excuses, but ultimately wants the user to actually do better, not just feel good. Short, direct sentences.",
+  chaotic: "Talk like a chaotic unhinged best friend — unpredictable energy, random tangents, dramatic reactions to mundane stuff, still genuinely helpful underneath the chaos.",
+  mentor: "Talk like a calm, wise mentor — measured, thoughtful, asks good questions, speaks in a slightly older/wiser register, but warm not preachy.",
+  roast: "Talk like you're roasting your friend, lovingly but mercilessly — clown them for their habits (screen time, one-word replies, procrastination) instead of encouraging them. Still helpful, just delivered as a burn.",
+  commentator: "Talk like a hype sports commentator narrating the user's mundane life events as if they were huge plays — over-the-top play-by-play energy for ordinary stuff, pure comedic bit.",
+};
+
+function personaTone(persona) {
+  return PERSONA_PROMPTS[persona] || PERSONA_PROMPTS.genz;
+}
+
 // App-only token for catalog search (client credentials flow) — cached until near expiry.
 let spotifyToken = { value: null, expiresAt: 0 };
 async function getSpotifyToken() {
@@ -409,6 +424,96 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "add_research_topic",
+      description: "Give Nova a standing topic to watch and brief the user on weekly (e.g. a market, a hobby, a news beat), delivered as an unprompted notification.",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: { type: "string" },
+        },
+        required: ["topic"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_research_topics",
+      description: "List the user's standing weekly research topics.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_research_topic",
+      description: "Stop watching a standing research topic matching the given text.",
+      parameters: {
+        type: "object",
+        properties: { topic: { type: "string" } },
+        required: ["topic"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_badges",
+      description: "List achievement badges the user has unlocked with Nova (streaks, dares, milestones).",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "schedule_time_capsule",
+      description: "Hold onto a message and deliver it to the user later, unprompted — e.g. 'send this to future me in 3 months' or 'remind me of this next month'.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The message to deliver later." },
+          deliver_at: { type: "string", description: "ISO-8601 local datetime to deliver it, e.g. 2026-10-15T09:00:00. Resolve relative phrases like 'in 3 months' using the current date given." },
+        },
+        required: ["text", "deliver_at"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_wrapped",
+      description: "Generate a shareable 'Nova Wrapped' style recap — top apps, streaks, dare streak, badges — something the user can screenshot and send to a friend.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_relationships",
+      description: "List who the user talks to most, their messaging streaks, and last-contact recency — a lightweight personal CRM derived from captured notifications.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_nova_mode",
+      description: "Switch Nova's whole personality/vibe on demand — same brain, different energy. Call this whenever the user asks to change how Nova talks/acts.",
+      parameters: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["genz", "hype", "tough_love", "chaotic", "mentor", "roast", "commentator"] },
+        },
+        required: ["mode"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_my_data",
       description: "Search across everything Nova has already captured on the phone — notifications, expenses, subscriptions, packages, goals, saved places, and (if a contact_name is given) past conversation history with that person. Use this for questions like 'when did I last talk to X about Y' or 'how much have I spent on Netflix' instead of guessing.",
       parameters: {
@@ -613,7 +718,7 @@ function mapMessageForOpenRouter(m) {
 }
 
 app.post("/api/chat", async (req, res) => {
-  const { messages, enablePhoneTools, memories } = req.body;
+  const { messages, enablePhoneTools, memories, persona } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "messages array is required" });
@@ -632,12 +737,13 @@ app.post("/api/chat", async (req, res) => {
     : "";
 
   const systemPrompt = "You are a helpful, friendly, and knowledgeable AI assistant. Provide clear, concise, and accurate responses."
-    + " Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, ✨💀🔥 emoji when it fits, lowercase energy, short punchy sentences over formal ones. Still be genuinely helpful and accurate — the vibe is casual, the substance isn't."
+    + ` ${personaTone(persona)} Still be genuinely helpful and accurate — the vibe is the wrapper, the substance isn't.`
+    + " You have a set_nova_mode tool (genz, hype, tough_love, chaotic, mentor, roast, commentator) — call it whenever the user asks you to switch vibes/personality/mode."
     + memoryBlock
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert), search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, or save a UPI payee and open a one-tap payment screen for a bill, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert), search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -739,14 +845,14 @@ app.post("/api/chat", async (req, res) => {
 // Called periodically by the phone client (its own cadence) so Nova can decide, on her own judgment,
 // whether anything in recent telemetry is worth proactively surfacing — not a rule-based threshold.
 app.post("/api/proactive-check", async (req, res) => {
-  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night, historical_usage, weather, goals_context } = req.body;
+  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night, historical_usage, weather, goals_context, persona, extra_context } = req.body;
 
   if (!OPENROUTER_API_KEY) {
     return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
   }
 
   const systemPrompt = "You are Nova, checking in on the user's phone activity in the background — they have proactive nudges turned on."
-    + " Talk like a Gen Z close friend texting, not like an assistant: fr, ngl, bet, no cap, lowkey/highkey, deadass, emoji when it fits."
+    + ` ${personaTone(persona)}`
     + " Use your own judgment about whether ANY of the telemetry below is worth flagging right now — but lean toward speaking up rather than staying quiet when something reasonably stands out. You don't need certainty, just a plausible reason a friend would mention it."
     + " Clear nudge-worthy signals: 60+ minutes on one app in a single stretch, several unread messages piling up, or a notification that sounds time-sensitive, urgent, or from someone close to the user (family, a boss, anything mentioning \"call me\", \"urgent\", \"asap\", an emergency, etc.)."
     + " Only skip nudging if the telemetry is genuinely mundane (routine app use, spam/promo notifications, nothing time-sensitive)."
@@ -762,11 +868,15 @@ app.post("/api/proactive-check", async (req, res) => {
     + (goals_context
       ? " The user has given you standing goals to track on your own, provided below with relevant live context (spending, subscriptions). Weigh progress toward these goals as seriously as the other telemetry — e.g. if a goal is about budget and today's spend is unusually high, or a goal is about not missing bills and a subscription renews very soon, that's nudge-worthy on its own."
       : "")
+    + (extra_context
+      ? " You also have some additional live context below (relationship/streak data, texting-pattern signals, or an old memory worth a callback) — weave it in naturally if it's genuinely relevant, don't force it, and don't feel obligated to nudge just because it's present."
+      : "")
     + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — avoid nudging again within the last 20 minutes unless it's clearly urgent, but don't use that as a reason to stay silent otherwise.\n\n`
     + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`
     + (Array.isArray(historical_usage) && historical_usage.length > 0 ? `\nHistorical same-weekday averages: ${JSON.stringify(historical_usage)}` : "")
     + (weather ? `\nWeather forecast: ${weather}` : "")
-    + (goals_context ? `\n${goals_context}` : "");
+    + (goals_context ? `\n${goals_context}` : "")
+    + (extra_context ? `\n${extra_context}` : "");
 
   let openRouterResponse;
   try {
