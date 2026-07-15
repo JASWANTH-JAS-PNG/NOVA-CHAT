@@ -914,7 +914,8 @@ app.post("/api/proactive-check", async (req, res) => {
   const toolCall = data.choices?.[0]?.message?.tool_calls?.find((tc) => tc.function?.name === "send_nudge");
 
   if (!toolCall) {
-    return res.json({ nudge: null });
+    // TEMPORARY DEBUG — remove once the forced tool_choice issue is diagnosed.
+    return res.json({ nudge: null, debug_finish_reason: data.choices?.[0]?.finish_reason, debug_message: data.choices?.[0]?.message, debug_error: data.error });
   }
 
   try {
