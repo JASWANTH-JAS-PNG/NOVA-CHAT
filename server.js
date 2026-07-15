@@ -302,6 +302,41 @@ const PHONE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "reply_all_unread_instagram",
+      description: "Draft and send an AI reply to every unread Instagram DM currently captured on the phone, with no per-message confirmation.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_expense_summary",
+      description: "Get how much the user spent (and received) on a given day, tracked automatically from bank/UPI SMS alerts.",
+      parameters: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "'today', 'yesterday', or an ISO date like 2026-07-14. Omit for today." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_package_status",
+      description: "Get the latest tracked status (shipped, out for delivery, delivered) of recent Amazon/Flipkart orders, parsed automatically from their notifications.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
 ];
 
 // Forced tool_choice for /api/proactive-check — the model either calls this with a message, or doesn't call it at all.
@@ -316,6 +351,23 @@ const NUDGE_TOOL = {
         message: { type: "string", description: "The nudge message to show the user, in Nova's voice." },
       },
       required: ["message"],
+    },
+  },
+};
+
+// Forced tool_choice for /api/detect-meeting — the model either proposes a meeting, or doesn't call it at all.
+const MEETING_TOOL = {
+  type: "function",
+  function: {
+    name: "propose_meeting",
+    description: "Propose adding a specific meeting/plan mentioned in the message to the user's calendar.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short calendar event title, e.g. 'Coffee with Priya'." },
+        isoDateTime: { type: "string", description: "ISO-8601 local datetime, e.g. 2026-07-16T17:00:00. Resolve relative terms like 'tomorrow' using the current date given." },
+      },
+      required: ["title", "isoDateTime"],
     },
   },
 };
@@ -391,7 +443,7 @@ app.post("/api/chat", async (req, res) => {
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp or Gmail messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, or turn your own proactive nudges on/off, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS, or check the delivery status of recent Amazon/Flipkart orders, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -493,7 +545,7 @@ app.post("/api/chat", async (req, res) => {
 // Called periodically by the phone client (its own cadence) so Nova can decide, on her own judgment,
 // whether anything in recent telemetry is worth proactively surfacing — not a rule-based threshold.
 app.post("/api/proactive-check", async (req, res) => {
-  const { app_usage, recent_notifications, minutes_since_last_nudge } = req.body;
+  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night } = req.body;
 
   if (!OPENROUTER_API_KEY) {
     return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
@@ -504,6 +556,9 @@ app.post("/api/proactive-check", async (req, res) => {
     + " Use your own judgment about whether ANY of the telemetry below is worth flagging right now — but lean toward speaking up rather than staying quiet when something reasonably stands out. You don't need certainty, just a plausible reason a friend would mention it."
     + " Clear nudge-worthy signals: 60+ minutes on one app in a single stretch, several unread messages piling up, or a notification that sounds time-sensitive, urgent, or from someone close to the user (family, a boss, anything mentioning \"call me\", \"urgent\", \"asap\", an emergency, etc.)."
     + " Only skip nudging if the telemetry is genuinely mundane (routine app use, spam/promo notifications, nothing time-sensitive)."
+    + (is_late_night
+      ? " It's currently late night (11pm-5am) for the user — this adds a bedtime/wellness angle: if there's meaningful screen time on a distracting app (social media, games, doomscrolling-style apps) at this hour, that alone is worth a gentle nudge to wrap up and get some sleep, even if it wouldn't be nudge-worthy during the day."
+      : "")
     + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — avoid nudging again within the last 20 minutes unless it's clearly urgent, but don't use that as a reason to stay silent otherwise.\n\n`
     + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`;
 
@@ -546,6 +601,65 @@ app.post("/api/proactive-check", async (req, res) => {
     return res.json({ nudge: args.message ?? null });
   } catch {
     return res.json({ nudge: null });
+  }
+});
+
+// Called by the phone client when a captured message notification plausibly mentions a plan —
+// asks the model whether there's a specific meeting worth offering to add to the calendar.
+app.post("/api/detect-meeting", async (req, res) => {
+  const { message, sender } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ error: "message is required" });
+  }
+  if (!OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
+  }
+
+  const systemPrompt = `The current date and time is ${new Date().toString()}.`
+    + ` ${sender ? `A message from ${sender}` : "A message"} was just received: "${message}".`
+    + " If it clearly mentions a specific meeting, call, or plan with a discernible date/time (even relative, like 'tomorrow at 5' or 'Friday morning'), call propose_meeting with a short title and the resolved ISO datetime."
+    + " If it's vague, has no discernible time, or isn't actually about scheduling something, don't call the tool at all.";
+
+  let openRouterResponse;
+  try {
+    openRouterResponse = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [{ role: "system", content: systemPrompt }],
+        tools: [MEETING_TOOL],
+        tool_choice: "auto",
+        stream: false,
+      }),
+    });
+  } catch (err) {
+    console.error("Error calling OpenRouter:", err.message);
+    return res.status(500).json({ error: "Cannot connect to OpenRouter." });
+  }
+
+  if (!openRouterResponse.ok) {
+    const errText = await openRouterResponse.text().catch(() => "");
+    console.error("OpenRouter error:", errText);
+    return res.status(500).json({ error: "OpenRouter request failed. Check your API key and model." });
+  }
+
+  const data = await openRouterResponse.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.find((tc) => tc.function?.name === "propose_meeting");
+
+  if (!toolCall) {
+    return res.json({ title: null, isoDateTime: null });
+  }
+
+  try {
+    const args = JSON.parse(toolCall.function.arguments);
+    return res.json({ title: args.title ?? null, isoDateTime: args.isoDateTime ?? null });
+  } catch {
+    return res.json({ title: null, isoDateTime: null });
   }
 });
 
