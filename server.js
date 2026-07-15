@@ -857,11 +857,10 @@ app.post("/api/proactive-check", async (req, res) => {
     return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
   }
 
-  const systemPrompt = "You are Nova, checking in on the user's phone activity in the background — they have proactive nudges turned on."
+  const systemPrompt = "You are Nova, checking in on the user's phone activity in the background — they have proactive nudges turned on, and they specifically want a check-in EVERY time this runs, not just when something stands out."
     + ` ${personaTone(persona)}`
-    + " Use your own judgment about whether ANY of the telemetry below is worth flagging right now — but lean toward speaking up rather than staying quiet when something reasonably stands out. You don't need certainty, just a plausible reason a friend would mention it."
-    + " Clear nudge-worthy signals: 60+ minutes on one app in a single stretch, several unread messages piling up, or a notification that sounds time-sensitive, urgent, or from someone close to the user (family, a boss, anything mentioning \"call me\", \"urgent\", \"asap\", an emergency, etc.)."
-    + " Only skip nudging if the telemetry is genuinely mundane (routine app use, spam/promo notifications, nothing time-sensitive)."
+    + " Always call send_nudge with something — if there's a clear signal (heavy usage, piling-up messages, something time-sensitive, weather, a goal, a relationship signal), lead with that. If genuinely nothing stands out, that's fine too — just send a short, casual check-in in your own voice (how's it going, what are you up to, a light observation) instead of staying silent. Never skip calling the tool."
+    + " Clear signals worth leading with: 60+ minutes on one app in a single stretch, several unread messages piling up, or a notification that sounds time-sensitive, urgent, or from someone close to the user (family, a boss, anything mentioning \"call me\", \"urgent\", \"asap\", an emergency, etc.)."
     + (is_late_night
       ? " It's currently late night (11pm-5am) for the user — this adds a bedtime/wellness angle: if there's meaningful screen time on a distracting app (social media, games, doomscrolling-style apps) at this hour, that alone is worth a gentle nudge to wrap up and get some sleep, even if it wouldn't be nudge-worthy during the day."
       : "")
@@ -896,7 +895,7 @@ app.post("/api/proactive-check", async (req, res) => {
         model: OPENROUTER_MODEL,
         messages: [{ role: "system", content: systemPrompt }],
         tools: [NUDGE_TOOL],
-        tool_choice: "auto",
+        tool_choice: { type: "function", function: { name: "send_nudge" } },
         stream: false,
       }),
     });
