@@ -367,6 +367,158 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "configure_bill_payee",
+      description: "Save a payee's UPI ID (electricity board, landlord, broadband provider, etc.) so bills can be paid one-tap later. Banks never expose a merchant's UPI ID automatically, so the user has to give it once.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "What to call this payee, e.g. 'electricity board'." },
+          upi_vpa: { type: "string", description: "Their UPI ID, e.g. 'name@bank'." },
+        },
+        required: ["name", "upi_vpa"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_bill_payees",
+      description: "List saved UPI bill payees.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pay_bill",
+      description: "Open the UPI payment screen pre-filled for a saved payee. The user still confirms the actual payment themselves in their UPI app — this just gets them there in one tap.",
+      parameters: {
+        type: "object",
+        properties: {
+          payee_name: { type: "string", description: "Name of a previously saved bill payee." },
+          amount: { type: "number", description: "Amount in rupees, if known." },
+          note: { type: "string", description: "Optional payment note/reference." },
+        },
+        required: ["payee_name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_my_data",
+      description: "Search across everything Nova has already captured on the phone — notifications, expenses, subscriptions, packages, goals, saved places, and (if a contact_name is given) past conversation history with that person. Use this for questions like 'when did I last talk to X about Y' or 'how much have I spent on Netflix' instead of guessing.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What the user is trying to find out." },
+          contact_name: { type: "string", description: "If the question is about a specific person, their name/title as it'd appear in notifications." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_place",
+      description: "Save the user's current phone GPS location as a named place (e.g. 'home', 'work') for geofence-style automation.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Name for this place, e.g. 'home' or 'work'." },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "configure_place_alert",
+      description: "Set what happens when the user arrives at or leaves a saved place — either a local notification or an auto-sent text to someone.",
+      parameters: {
+        type: "object",
+        properties: {
+          place_name: { type: "string", description: "Name of a previously saved place." },
+          event: { type: "string", enum: ["arrive", "leave"] },
+          message: { type: "string", description: "Text to send/notify, if not the default." },
+          recipient: { type: "string", description: "Phone number or contact name to auto-text on this event. Omit to just get a local notification instead." },
+        },
+        required: ["place_name", "event"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_places",
+      description: "List the user's saved places and their configured arrive/leave alerts.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_place",
+      description: "Remove a saved place by name.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_goal",
+      description: "Give Nova a standing goal to track on her own over time (not just this conversation), e.g. 'keep me under 5000 rupees this month' or 'don't let me miss a subscription renewal'. Nova will factor it into her periodic proactive checks.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: { type: "string", description: "The goal, in plain language." },
+        },
+        required: ["description"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_goals",
+      description: "List the user's current standing goals.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "clear_goal",
+      description: "Remove a standing goal that matches the given description.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: { type: "string", description: "Text to match against existing goals for removal." },
+        },
+        required: ["description"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "configure_expense_digest",
       description: "Turn the daily spend digest notification on/off, or change its time. It's on by default at 8pm and needs no setup — only call this if the user wants to change or disable it.",
       parameters: {
@@ -485,7 +637,7 @@ app.post("/api/chat", async (req, res) => {
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, or log an expense manually (e.g. from a shared receipt), using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert), search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, or save a UPI payee and open a one-tap payment screen for a bill, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
       : "");
 
   let openRouterResponse;
@@ -587,7 +739,7 @@ app.post("/api/chat", async (req, res) => {
 // Called periodically by the phone client (its own cadence) so Nova can decide, on her own judgment,
 // whether anything in recent telemetry is worth proactively surfacing — not a rule-based threshold.
 app.post("/api/proactive-check", async (req, res) => {
-  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night, historical_usage } = req.body;
+  const { app_usage, recent_notifications, minutes_since_last_nudge, is_late_night, historical_usage, weather, goals_context } = req.body;
 
   if (!OPENROUTER_API_KEY) {
     return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
@@ -604,9 +756,17 @@ app.post("/api/proactive-check", async (req, res) => {
     + (Array.isArray(historical_usage) && historical_usage.length > 0
       ? " You also have each app's historical average for this same day of the week — if today's usage is meaningfully above that average (roughly 1.5x or more), treat that as a nudge-worthy pattern-break even if the raw minutes alone wouldn't normally cross the 60-minute bar. Mention the comparison naturally (e.g. \"you're way past your usual Friday Instagram time\") instead of quoting raw numbers robotically."
       : "")
+    + (weather
+      ? ` You also have the local weather forecast — if rain, storms, extreme heat/cold, or other notable weather is coming up in the next few hours, that alone is worth a heads-up (e.g. "gonna rain around 5, grab an umbrella"), even if nothing else stands out.`
+      : "")
+    + (goals_context
+      ? " The user has given you standing goals to track on your own, provided below with relevant live context (spending, subscriptions). Weigh progress toward these goals as seriously as the other telemetry — e.g. if a goal is about budget and today's spend is unusually high, or a goal is about not missing bills and a subscription renews very soon, that's nudge-worthy on its own."
+      : "")
     + ` It has been ${minutes_since_last_nudge ?? "an unknown number of"} minutes since Nova last nudged the user — avoid nudging again within the last 20 minutes unless it's clearly urgent, but don't use that as a reason to stay silent otherwise.\n\n`
     + `App usage: ${JSON.stringify(app_usage ?? [])}\nRecent notifications: ${JSON.stringify(recent_notifications ?? [])}`
-    + (Array.isArray(historical_usage) && historical_usage.length > 0 ? `\nHistorical same-weekday averages: ${JSON.stringify(historical_usage)}` : "");
+    + (Array.isArray(historical_usage) && historical_usage.length > 0 ? `\nHistorical same-weekday averages: ${JSON.stringify(historical_usage)}` : "")
+    + (weather ? `\nWeather forecast: ${weather}` : "")
+    + (goals_context ? `\n${goals_context}` : "");
 
   let openRouterResponse;
   try {
