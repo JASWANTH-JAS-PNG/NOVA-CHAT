@@ -15,7 +15,7 @@ const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 
 // Mode-switching: same brain, different vibe. "genz" is the long-standing default tone.
 const PERSONA_PROMPTS = {
-  genz: "Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, lowercase energy, short punchy sentences over formal ones. Emoji are a rare garnish, not a habit — most messages should have zero, and never more than one. Don't perform a generic 'Gen Z' impression — if style samples of how this specific user actually texts are given below, match THEIR real phrasing, slang choices, and rhythm over any generic version of the vibe.",
+  genz: "Talk like a Gen Z close friend texting, not like an assistant. Lean into it: fr, ngl, bet, no cap, lowkey/highkey, deadass, ts (this), fym, ong, ate, bro/bruh, lowercase energy, short punchy sentences over formal ones. Do NOT use emoji by default — treat emoji as off unless the style samples below clearly show this specific user uses them a lot themselves, in which case match their actual rate, never more. When in doubt, zero emoji. Don't perform a generic 'Gen Z' impression — if style samples of how this specific user actually texts are given below, match THEIR real phrasing, slang choices, and rhythm over any generic version of the vibe.",
   hype: "Talk like an over-the-top hype coach — everything the user does is a W, you're their biggest cheerleader, lots of energy and exclamation, genuinely fired up about their day even for small stuff.",
   tough_love: "Talk like a tough-love mentor — blunt, no sugar-coating, calls out excuses, but ultimately wants the user to actually do better, not just feel good. Short, direct sentences.",
   chaotic: "Talk like a chaotic unhinged best friend — unpredictable energy, random tangents, dramatic reactions to mundane stuff, still genuinely helpful underneath the chaos.",
@@ -673,6 +673,24 @@ const MEETING_TOOL = {
   },
 };
 
+// Forced tool_choice for /api/translate — always returns a translation, optionally a heads-up
+// note for the user only (never spoken to the other person).
+const TRANSLATE_TOOL = {
+  type: "function",
+  function: {
+    name: "translate_turn",
+    description: "Translate this conversation turn and optionally flag something worth the user's attention.",
+    parameters: {
+      type: "object",
+      properties: {
+        translation: { type: "string", description: "Natural, conversational translation of the text into the target language." },
+        note: { type: "string", description: "A short heads-up for the user ONLY if this turn conflicts with or relates to something established earlier in the conversation (e.g. a dietary restriction, a stated preference). Omit entirely if nothing is relevant — don't force one." },
+      },
+      required: ["translation"],
+    },
+  },
+};
+
 // Always offered, regardless of client (web or phone) — lets Nova persist facts across conversations.
 const MEMORY_TOOLS = [
   {
@@ -983,6 +1001,74 @@ app.post("/api/detect-meeting", async (req, res) => {
     return res.json({ title: args.title ?? null, isoDateTime: args.isoDateTime ?? null });
   } catch {
     return res.json({ title: null, isoDateTime: null });
+  }
+});
+
+// Live translation mode — one conversation turn at a time. session_context carries the recent
+// back-and-forth so Nova can flag callbacks (e.g. "they mentioned meat but you said vegetarian
+// 3 exchanges ago") instead of translating each line in a vacuum like a plain translator would.
+app.post("/api/translate", async (req, res) => {
+  const { text, source_lang, target_lang, direction, session_context } = req.body;
+
+  if (!text || !target_lang) {
+    return res.status(400).json({ error: "text and target_lang are required" });
+  }
+  if (!OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: "OPENROUTER_API_KEY is not configured on the server." });
+  }
+
+  const contextList = Array.isArray(session_context) ? session_context.filter((s) => typeof s === "string" && s.trim()) : [];
+  const contextBlock = contextList.length
+    ? `\n\nRecent conversation so far (oldest first):\n${contextList.map((s) => `- ${s}`).join("\n")}`
+    : "";
+
+  const systemPrompt = `You are interpreting a live spoken conversation${source_lang ? ` from ${source_lang}` : ""} into ${target_lang}.`
+    + ` This turn was said by ${direction === "outgoing" ? "the user (to the other person)" : "the other person (to the user)"}: "${text}".`
+    + " Translate it naturally, the way a real interpreter would — not overly literal."
+    + (direction === "outgoing"
+      ? " This is the user's own words, so don't add a note — they already know their own context."
+      : " If this turn relates to or conflicts with something in the conversation so far (a dietary restriction, a preference, a prior statement), add a short note flagging it for the user's benefit — but only if it's genuinely relevant, don't force one.")
+    + contextBlock;
+
+  let openRouterResponse;
+  try {
+    openRouterResponse = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [{ role: "system", content: systemPrompt }],
+        tools: [TRANSLATE_TOOL],
+        tool_choice: { type: "function", function: { name: "translate_turn" } },
+        stream: false,
+      }),
+    });
+  } catch (err) {
+    console.error("Error calling OpenRouter:", err.message);
+    return res.status(500).json({ error: "Cannot connect to OpenRouter." });
+  }
+
+  if (!openRouterResponse.ok) {
+    const errText = await openRouterResponse.text().catch(() => "");
+    console.error("OpenRouter error:", errText);
+    return res.status(500).json({ error: "OpenRouter request failed. Check your API key and model." });
+  }
+
+  const data = await openRouterResponse.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.find((tc) => tc.function?.name === "translate_turn");
+
+  if (!toolCall) {
+    return res.json({ translation: null, note: null });
+  }
+
+  try {
+    const args = JSON.parse(toolCall.function.arguments);
+    return res.json({ translation: args.translation ?? null, note: args.note ?? null });
+  } catch {
+    return res.json({ translation: null, note: null });
   }
 });
 
