@@ -10,6 +10,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 
 // Mode-switching: same brain, different vibe. "genz" is the long-standing default tone.
 const PERSONA_PROMPTS = {
@@ -981,6 +983,44 @@ app.post("/api/detect-meeting", async (req, res) => {
     return res.json({ title: args.title ?? null, isoDateTime: args.isoDateTime ?? null });
   } catch {
     return res.json({ title: null, isoDateTime: null });
+  }
+});
+
+// Cloned-voice TTS for nudges/predictions — falls back to the phone's local TTS on the client
+// if this isn't configured (503) or the ElevenLabs call fails, so it's always safe to call.
+app.post("/api/tts", async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: "text is required" });
+  if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
+    return res.status(503).json({ error: "Cloned-voice TTS is not configured on the server." });
+  }
+
+  try {
+    const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY,
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+    });
+
+    if (!ttsResponse.ok) {
+      const errText = await ttsResponse.text().catch(() => "");
+      console.error("ElevenLabs error:", errText);
+      return res.status(502).json({ error: "Voice cloning provider request failed." });
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    const buffer = Buffer.from(await ttsResponse.arrayBuffer());
+    res.send(buffer);
+  } catch (err) {
+    console.error("Error calling ElevenLabs:", err.message);
+    res.status(500).json({ error: "Cannot connect to the voice cloning provider." });
   }
 });
 
