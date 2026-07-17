@@ -12,6 +12,14 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://nova-chat-dbth.onrender.com";
+
+// In-memory per-call state (goal, transcript, status) keyed by Twilio CallSid — cleared if the
+// server restarts, same tradeoff as the Spotify token cache elsewhere in this file.
+const activeCalls = new Map();
 
 // Mode-switching: same brain, different vibe. "genz" is the long-standing default tone.
 const PERSONA_PROMPTS = {
@@ -50,6 +58,7 @@ async function getSpotifyToken() {
 
 app.use(cors({ origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:5174", "https://ai-chatbot-web.onrender.com"] }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // Twilio webhooks POST form-encoded bodies
 
 // Only offered to clients that opt in (the Android app) — the web chat has no phone to act on.
 const PHONE_TOOLS = [
@@ -350,6 +359,32 @@ const PHONE_TOOLS = [
     function: {
       name: "list_features",
       description: "List everything Nova can do / has been set up to do — every automation, tool, and feature — so the user can see the full picture. Use this whenever the user asks what Nova can do, what's been built, or what features exist.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "place_call",
+      description: "Place a real outgoing phone call on the user's behalf to accomplish a stated goal (e.g. book a table, ask about store hours, confirm an order). The call always opens by disclosing it's an AI assistant calling on the user's behalf — it never impersonates the user or hides that it's synthetic. Returns immediately once the call is placed; use check_call_status afterward to see how it went.",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number: { type: "string", description: "Phone number to call, in a dialable format (include country code if known)." },
+          goal: { type: "string", description: "What the call should accomplish, e.g. 'book a table for 2 at 7pm tonight'." },
+        },
+        required: ["phone_number", "goal"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_call_status",
+      description: "Check on the most recent phone call Nova placed on the user's behalf — whether it's still in progress, how it ended, and a transcript.",
       parameters: {
         type: "object",
         properties: {},
@@ -820,7 +855,7 @@ app.post("/api/chat", async (req, res) => {
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, turn on a live doom-scroll interrupt (scroll guard), turn every standing automation on at once in one shot, list out everything you're able to do so the user can see the full picture, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert and a ringer-mode change), set/clear a low-battery emergency contact, search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, turn on a live doom-scroll interrupt (scroll guard), turn every standing automation on at once in one shot, list out everything you're able to do so the user can see the full picture, place a real outgoing phone call on the user's behalf to accomplish a stated goal (always disclosing upfront that it's an AI calling on the user's behalf, never impersonating them) and check how a placed call went, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert and a ringer-mode change), set/clear a low-battery emergency contact, search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
         + " When the user hands you a multi-step goal in one line (e.g. 'reschedule my dentist appointment to Friday and let them know', 'clear my WhatsApp backlog and tell me what mattered'), complete the whole thing yourself by calling as many tools as it takes, one after another, without pausing to ask permission after each intermediate step — only stop and ask if you hit a real judgment call you can't make on your own (e.g. two contacts with the same name, an ambiguous date). When you're done, reply with a short natural summary of everything you actually did."
       : "");
 
@@ -1217,6 +1252,164 @@ app.get("/api/spotify-search", async (req, res) => {
     console.error("Spotify search error:", err.message);
     res.status(500).json({ error: "Spotify search failed." });
   }
+});
+
+function escapeXml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function twiml(inner) {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>${inner}</Response>`;
+}
+
+const CALL_END_TOKEN = "[END_CALL]";
+
+// Generates the AI's next spoken line for an in-progress outgoing call. The very first line of
+// every call discloses that it's an AI assistant calling on the user's behalf — this is a hard
+// instruction, not a suggestion, since the whole point of this feature (vs. voice cloning) is
+// that whoever picks up always knows they're talking to a disclosed AI, never being deceived
+// into thinking the real person called.
+async function generateCallReply(call, isOpening) {
+  const systemPrompt = `You are an AI voice assistant placing a real phone call on behalf of ${call.callerName}, to accomplish this goal: "${call.goal}". `
+    + `Your very first line of the call MUST clearly and explicitly disclose that you are an AI assistant calling on ${call.callerName}'s behalf — never let the other person believe they're speaking with ${call.callerName} directly, and never imply otherwise later in the call either. `
+    + `Speak naturally and briefly, like a real phone call — 1-2 sentences per turn, not like a chatbot. Stay focused on the goal. `
+    + `If the goal is accomplished, the other person can't help, or the call should clearly end for any reason, say a brief polite goodbye and put the exact text ${CALL_END_TOKEN} at the very end of your reply (it's a control signal, never spoken aloud). Otherwise don't include it.`;
+
+  const messages = [{ role: "system", content: systemPrompt }, ...call.history];
+  if (isOpening) {
+    messages.push({ role: "user", content: "The call just connected and the other person picked up. Say your opening line now." });
+  }
+
+  try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENROUTER_API_KEY}` },
+      body: JSON.stringify({ model: OPENROUTER_MODEL, messages, stream: false }),
+    });
+    if (!response.ok) throw new Error(`OpenRouter returned ${response.status}`);
+    const data = await response.json();
+    let text = data.choices?.[0]?.message?.content?.trim() || `Sorry, I'm having some trouble right now. Goodbye. ${CALL_END_TOKEN}`;
+    const shouldEnd = text.includes(CALL_END_TOKEN);
+    text = text.replace(CALL_END_TOKEN, "").trim();
+    return { text, shouldEnd };
+  } catch (err) {
+    console.error("Error generating call reply:", err.message);
+    return { text: "Sorry, I'm having some technical trouble. I'll try again later. Goodbye.", shouldEnd: true };
+  }
+}
+
+// Places a real outgoing call via Twilio, disclosing upfront it's an AI assistant — see
+// generateCallReply. Deliberately does NOT clone the user's voice or let the call sound like the
+// user in person; that was considered and rejected as undisclosed impersonation.
+app.post("/api/place-call", async (req, res) => {
+  const { to, goal, caller_name } = req.body;
+  if (!to || !goal) return res.status(400).json({ error: "to and goal are required" });
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+    return res.status(503).json({ error: "Calling isn't configured on the server yet — a Twilio account, phone number, and API credentials are needed first." });
+  }
+
+  try {
+    const params = new URLSearchParams({
+      To: to,
+      From: TWILIO_PHONE_NUMBER,
+      Url: `${PUBLIC_BASE_URL}/api/twilio/voice`,
+      StatusCallback: `${PUBLIC_BASE_URL}/api/twilio/status`,
+      StatusCallbackEvent: "completed",
+    });
+    const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64")}`,
+      },
+      body: params.toString(),
+    });
+    if (!twilioResponse.ok) {
+      const errText = await twilioResponse.text().catch(() => "");
+      console.error("Twilio call creation error:", errText);
+      return res.status(502).json({ error: "Twilio couldn't place the call." });
+    }
+    const data = await twilioResponse.json();
+    activeCalls.set(data.sid, {
+      goal,
+      callerName: caller_name || "the user",
+      history: [],
+      status: "in-progress",
+      resultSummary: null,
+    });
+    res.json({ call_sid: data.sid });
+  } catch (err) {
+    console.error("Error placing call:", err.message);
+    res.status(500).json({ error: "Cannot connect to Twilio." });
+  }
+});
+
+// Twilio webhook: fired when the call is answered.
+app.post("/api/twilio/voice", async (req, res) => {
+  const call = activeCalls.get(req.body.CallSid);
+  res.set("Content-Type", "text/xml");
+  if (!call) {
+    return res.send(twiml(`<Say>Sorry, something went wrong on our end. Goodbye.</Say><Hangup/>`));
+  }
+
+  const opening = await generateCallReply(call, true);
+  call.history.push({ role: "assistant", content: opening.text });
+  if (opening.shouldEnd) {
+    call.status = "completed";
+    call.resultSummary = opening.text;
+    return res.send(twiml(`<Say>${escapeXml(opening.text)}</Say><Hangup/>`));
+  }
+  res.send(twiml(
+    `<Say>${escapeXml(opening.text)}</Say>`
+    + `<Gather input="speech" action="/api/twilio/respond" method="POST" speechTimeout="auto"/>`
+    + `<Say>Sorry, I didn't catch that. I'll try again another time. Goodbye.</Say><Hangup/>`,
+  ));
+});
+
+// Twilio webhook: fired with the transcribed speech after each <Gather>.
+app.post("/api/twilio/respond", async (req, res) => {
+  const call = activeCalls.get(req.body.CallSid);
+  res.set("Content-Type", "text/xml");
+  if (!call) {
+    return res.send(twiml(`<Say>Sorry, something went wrong. Goodbye.</Say><Hangup/>`));
+  }
+
+  call.history.push({ role: "user", content: req.body.SpeechResult || "" });
+  const reply = await generateCallReply(call, false);
+  call.history.push({ role: "assistant", content: reply.text });
+
+  if (reply.shouldEnd) {
+    call.status = "completed";
+    call.resultSummary = reply.text;
+    return res.send(twiml(`<Say>${escapeXml(reply.text)}</Say><Hangup/>`));
+  }
+  res.send(twiml(
+    `<Say>${escapeXml(reply.text)}</Say>`
+    + `<Gather input="speech" action="/api/twilio/respond" method="POST" speechTimeout="auto"/>`
+    + `<Say>Sorry, I didn't catch that. Goodbye.</Say><Hangup/>`,
+  ));
+});
+
+// Twilio webhook: call lifecycle status (covers no-answer/busy/failed cases that never reach /voice).
+app.post("/api/twilio/status", (req, res) => {
+  const call = activeCalls.get(req.body.CallSid);
+  const callStatus = req.body.CallStatus;
+  if (call && call.status === "in-progress" && ["completed", "busy", "failed", "no-answer", "canceled"].includes(callStatus)) {
+    call.status = callStatus;
+    if (!call.resultSummary) call.resultSummary = `Call ended (${callStatus}) before reaching a natural conclusion.`;
+  }
+  res.sendStatus(200);
+});
+
+app.get("/api/call-status/:callSid", (req, res) => {
+  const call = activeCalls.get(req.params.callSid);
+  if (!call) return res.status(404).json({ error: "Unknown or expired call — the server may have restarted since it was placed." });
+  res.json({ status: call.status, transcript: call.history, result_summary: call.resultSummary });
 });
 
 app.listen(PORT, () => {
