@@ -346,6 +346,48 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "configure_rewrite_bubble",
+      description: "Turn on/off a floating bubble that rewrites whatever text field is currently focused, in ANY app (not just the messaging apps NovaChat already reads), in the user's own voice. The practical stand-in for a full custom keyboard.",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+        },
+        required: ["enabled"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "configure_wake_word",
+      description: "Turn on/off always-listening \"Hey Nova\" wake-word mode — hands-free voice activation without opening the app or tapping the mic. Requires a Picovoice AccessKey to already be set via set_wake_word_access_key.",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+        },
+        required: ["enabled"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_wake_word_access_key",
+      description: "Save the user's Picovoice AccessKey (from their free console.picovoice.ai account), needed before wake-word mode can be turned on.",
+      parameters: {
+        type: "object",
+        properties: {
+          access_key: { type: "string" },
+        },
+        required: ["access_key"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "enable_all_automations",
       description: "Turn on every standing automation at once in one shot: proactive nudges, live doom-scroll guard, always-on auto-reply, and the daily morning briefing. Use this whenever the user asks to turn everything/all features on, instead of calling each toggle tool separately.",
       parameters: {
@@ -388,6 +430,20 @@ const PHONE_TOOLS = [
       parameters: {
         type: "object",
         properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "trigger_fake_call",
+      description: "Fake an incoming phone call on the user's own phone as an escape hatch from an awkward situation — a realistic-looking incoming call screen, no real telephony involved. Fires after a short delay so the user has time to glance at their phone naturally.",
+      parameters: {
+        type: "object",
+        properties: {
+          caller_name: { type: "string", description: "Name to show as the caller, e.g. 'Mom' or 'Boss'. Defaults to something generic if omitted." },
+          delay_seconds: { type: "integer", description: "Seconds to wait before it rings. Defaults to 5." },
+        },
       },
     },
   },
@@ -655,6 +711,7 @@ const PHONE_TOOLS = [
           message: { type: "string", description: "Text to send/notify, if not the default." },
           recipient: { type: "string", description: "Phone number or contact name to auto-text on this event. Omit to just get a local notification instead." },
           ringer_mode: { type: "string", enum: ["normal", "vibrate", "silent"], description: "Auto-switch ringer mode on this event, e.g. silent on arriving at work." },
+          late_night_only: { type: "boolean", description: "Only fire this alert late at night (roughly 10pm-5am) — e.g. a 'just got home safe' text to someone, that shouldn't also fire on an ordinary daytime arrival." },
         },
         required: ["place_name", "event"],
       },
@@ -870,7 +927,7 @@ app.post("/api/chat", async (req, res) => {
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, turn on a live doom-scroll interrupt (scroll guard), turn every standing automation on at once in one shot, list out everything you're able to do so the user can see the full picture, write a phone-call script and get the dialer ready for the user to make a call themselves (the free default — prefer this over place_call unless the user has specifically set up real automated calling), place a real outgoing phone call on the user's behalf to accomplish a stated goal (always disclosing upfront that it's an AI calling on the user's behalf, never impersonating them) and check how a placed call went, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert and a ringer-mode change), set/clear a low-battery emergency contact, search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, turn on a live doom-scroll interrupt (scroll guard), turn every standing automation on at once in one shot, list out everything you're able to do so the user can see the full picture, turn on a floating rewrite-in-my-voice bubble that works in any app, turn on always-listening 'Hey Nova' wake-word mode and save the Picovoice access key it needs, fake an incoming call on the user's own phone as an escape hatch from an awkward situation, write a phone-call script and get the dialer ready for the user to make a call themselves (the free default — prefer this over place_call unless the user has specifically set up real automated calling), place a real outgoing phone call on the user's behalf to accomplish a stated goal (always disclosing upfront that it's an AI calling on the user's behalf, never impersonating them) and check how a placed call went, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert and a ringer-mode change), set/clear a low-battery emergency contact, search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
         + " When the user hands you a multi-step goal in one line (e.g. 'reschedule my dentist appointment to Friday and let them know', 'clear my WhatsApp backlog and tell me what mattered'), complete the whole thing yourself by calling as many tools as it takes, one after another, without pausing to ask permission after each intermediate step — only stop and ask if you hit a real judgment call you can't make on your own (e.g. two contacts with the same name, an ambiguous date). When you're done, reply with a short natural summary of everything you actually did."
       : "");
 
