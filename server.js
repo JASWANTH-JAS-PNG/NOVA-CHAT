@@ -516,6 +516,19 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "set_low_battery_contact",
+      description: "Set (or clear, by omitting contact) a person to auto-text a heads-up when the phone's battery gets low, e.g. 'my mom' or a phone number.",
+      parameters: {
+        type: "object",
+        properties: {
+          contact: { type: "string", description: "Phone number or contact name to text when battery is low. Omit to clear/disable." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_my_data",
       description: "Search across everything Nova has already captured on the phone — notifications, expenses, subscriptions, packages, goals, saved places, and (if a contact_name is given) past conversation history with that person. Use this for questions like 'when did I last talk to X about Y' or 'how much have I spent on Netflix' instead of guessing.",
       parameters: {
@@ -546,7 +559,7 @@ const PHONE_TOOLS = [
     type: "function",
     function: {
       name: "configure_place_alert",
-      description: "Set what happens when the user arrives at or leaves a saved place — either a local notification or an auto-sent text to someone.",
+      description: "Set what happens when the user arrives at or leaves a saved place — a local notification, an auto-sent text to someone, and/or a ringer mode change (needs a one-time Do Not Disturb access grant).",
       parameters: {
         type: "object",
         properties: {
@@ -554,6 +567,7 @@ const PHONE_TOOLS = [
           event: { type: "string", enum: ["arrive", "leave"] },
           message: { type: "string", description: "Text to send/notify, if not the default." },
           recipient: { type: "string", description: "Phone number or contact name to auto-text on this event. Omit to just get a local notification instead." },
+          ringer_mode: { type: "string", enum: ["normal", "vibrate", "silent"], description: "Auto-switch ringer mode on this event, e.g. silent on arriving at work." },
         },
         required: ["place_name", "event"],
       },
