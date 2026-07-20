@@ -28,3 +28,5 @@ services:
         sync: false
       - key: PUBLIC_BASE_URL
         value: https://nova-chat-dbth.onrender.com
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false

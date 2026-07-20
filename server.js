@@ -16,6 +16,7 @@ const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://nova-chat-dbth.onrender.com";
+const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 // In-memory per-call state (goal, transcript, status) keyed by Twilio CallSid — cleared if the
 // server restarts, same tradeoff as the Spotify token cache elsewhere in this file.
@@ -745,6 +746,47 @@ const PHONE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "set_category_reminder",
+      description: "Set a reminder tied to a KIND of place rather than one saved location — e.g. 'remind me next time I'm near a pharmacy' or 'a supermarket'. Fires automatically whenever the user is physically near any place of that category, not just a specific saved one.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", description: "The kind of place, e.g. pharmacy, supermarket, gas_station, atm, bank, restaurant, gym. Use the closest matching common place category." },
+          message: { type: "string", description: "What to remind the user, e.g. 'buy bandages'. Omit for a plain heads-up notification." },
+          radius_meters: { type: "integer", description: "How close counts as 'near'. Defaults to 400m." },
+        },
+        required: ["category"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_category_reminders",
+      description: "List the user's standing category-based location reminders.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_category_reminder",
+      description: "Remove a category-based location reminder.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string" },
+        },
+        required: ["category"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "set_goal",
       description: "Give Nova a standing goal to track on her own over time (not just this conversation), e.g. 'keep me under 5000 rupees this month' or 'don't let me miss a subscription renewal'. Nova will factor it into her periodic proactive checks.",
       parameters: {
@@ -928,7 +970,7 @@ app.post("/api/chat", async (req, res) => {
     + " You have a remember tool and a forget tool for persisting facts about the user across conversations, not just this one. Call remember, before writing your reply, any time the user asks you to remember/note/save something, or shares a durable preference, fact, or detail about themselves worth recalling later (their name, likes/dislikes, ongoing projects, constraints) — this includes simple requests like 'remember that X.' Call forget the same way when a fact becomes outdated or the user asks you to forget it. These calls are low-ceremony — don't make a big deal about it in your reply, just confirm briefly and naturally."
     + (enablePhoneTools
       ? ` You are running inside the user's phone app. The current date and time is ${new Date().toString()}, use it to resolve relative times like "tomorrow" or "5pm" when creating reminders. `
-        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, turn on a live doom-scroll interrupt (scroll guard), turn every standing automation on at once in one shot, list out everything you're able to do so the user can see the full picture, turn on a floating rewrite-in-my-voice bubble that works in any app, turn on always-listening 'Hey Nova' wake-word mode and save the Picovoice access key it needs, fake an incoming call on the user's own phone as an escape hatch from an awkward situation, write a phone-call script and get the dialer ready for the user to make a call themselves (the free default — prefer this over place_call unless the user has specifically set up real automated calling), place a real outgoing phone call on the user's behalf to accomplish a stated goal (always disclosing upfront that it's an AI calling on the user's behalf, never impersonating them) and check how a placed call went, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert and a ringer-mode change), set/clear a low-battery emergency contact, search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
+        + "You can open installed apps, search Spotify for a song, pause/resume/skip playback, open the Add Contact screen, create a calendar reminder, search the live web, send a WhatsApp message directly, send an email or SMS directly, reply to all unread WhatsApp, Gmail, or Instagram messages at once, turn always-on auto-reply mode on/off, schedule or cancel a recurring daily briefing, summarize recent notifications into a catch-up digest, check app usage time, find nearby places, share your location, navigate to a destination, turn your own proactive nudges on/off, turn on a live doom-scroll interrupt (scroll guard), turn every standing automation on at once in one shot, list out everything you're able to do so the user can see the full picture, turn on a floating rewrite-in-my-voice bubble that works in any app, turn on always-listening 'Hey Nova' wake-word mode and save the Picovoice access key it needs, fake an incoming call on the user's own phone as an escape hatch from an awkward situation, write a phone-call script and get the dialer ready for the user to make a call themselves (the free default — prefer this over place_call unless the user has specifically set up real automated calling), place a real outgoing phone call on the user's behalf to accomplish a stated goal (always disclosing upfront that it's an AI calling on the user's behalf, never impersonating them) and check how a placed call went, check today's (or a past day's) spending tracked from bank SMS (a daily spend digest notification also goes out automatically at 8pm), check the delivery status of recent Amazon/Flipkart orders, list detected recurring subscriptions and when they'll renew, log an expense manually (e.g. from a shared receipt), set/list/clear standing goals for Nova to track on her own over time, save/list/remove places for geofence-style automation (with an arrive/leave alert and a ringer-mode change), set/list/remove a reminder tied to a KIND of place (e.g. next time near any pharmacy, not one specific saved spot), set/clear a low-battery emergency contact, search across everything already captured (notifications, expenses, subscriptions, packages, goals, places, past conversations) with search_my_data, save a UPI payee and open a one-tap payment screen for a bill, track a personal CRM of who the user talks to and their streaks, keep a standing weekly watch on research topics, hold a message to deliver later (time capsule), generate a shareable 'Nova Wrapped' recap, list unlocked achievement badges, or switch your own personality/mode (genz, hype, tough_love, chaotic, mentor, roast, commentator) on request, using the tools provided. Use a tool whenever the user's request calls for one of these actions, then reply naturally about what you did."
         + " When the user hands you a multi-step goal in one line (e.g. 'reschedule my dentist appointment to Friday and let them know', 'clear my WhatsApp backlog and tell me what mattered'), complete the whole thing yourself by calling as many tools as it takes, one after another, without pausing to ask permission after each intermediate step — only stop and ask if you hit a real judgment call you can't make on your own (e.g. two contacts with the same name, an ambiguous date). When you're done, reply with a short natural summary of everything you actually did."
       : "");
 
@@ -1268,6 +1310,41 @@ app.post("/api/tts", async (req, res) => {
   } catch (err) {
     console.error("Error calling ElevenLabs:", err.message);
     res.status(500).json({ error: "Cannot connect to the voice cloning provider." });
+  }
+});
+
+// Real proximity search (lat/lng + radius + Google's place-type taxonomy) for category-based
+// location reminders — deliberately not reusing the text-based find_nearby_places/web-search
+// tool, since that has no notion of "within N meters of here right now."
+app.get("/api/nearby-category", async (req, res) => {
+  const { lat, lng, category, radius_meters } = req.query;
+  if (!lat || !lng || !category) {
+    return res.status(400).json({ error: "lat, lng, and category query params are required" });
+  }
+  if (!GOOGLE_PLACES_API_KEY) {
+    return res.status(503).json({ error: "Category location reminders aren't configured on the server yet (needs a Google Places API key)." });
+  }
+
+  try {
+    const radius = radius_meters ? Number(radius_meters) : 400;
+    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${encodeURIComponent(category)}&key=${GOOGLE_PLACES_API_KEY}`;
+    const placesResponse = await fetch(url);
+    if (!placesResponse.ok) throw new Error(`Google Places returned ${placesResponse.status}`);
+
+    const data = await placesResponse.json();
+    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      console.error("Google Places error:", data.status, data.error_message);
+      return res.status(502).json({ error: `Google Places request failed: ${data.status}` });
+    }
+
+    const nearest = (data.results ?? [])[0];
+    res.json({
+      found: !!nearest,
+      name: nearest?.name ?? null,
+    });
+  } catch (err) {
+    console.error("Nearby-category search error:", err.message);
+    res.status(500).json({ error: "Nearby-category search failed." });
   }
 });
 
